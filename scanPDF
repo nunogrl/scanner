@@ -1,0 +1,214 @@
+#! /bin/bash -eu
+# Version 1.01
+# Last updated 11 March 2011
+#
+# DEFAULTS
+#
+# SCANNER_MODE="Color"   # try  "lin", "bin",  "gr", or "col" 
+# SCANNER_MODE="Linear"   # try  "Linear", "bin",  "gr", or "col" 
+SCANNER_MODE="Gray"   # try  "Linear", "bin",  "gr", or "col" 
+SCANNER_RES=200
+
+HIGHTLIGHT=0
+
+PDF_QUALITY=70
+# PDF_FORCE="colour"
+PDF_FORCE="monochrome"
+PAGE_X=210
+PAGE_Y=297
+DESTFILE=$(pwd)
+DM=`date +%d%b%y_%H%M%S`
+DESTFILE="$DESTFILE/scan_$DM.pdf"
+#
+# CHECK COMMAND LINE PARAMS
+#
+p=0
+for PARAM in "$@"
+do
+    p=$(( $p + 1 ))
+    case "$PARAM" in
+     "--file")
+            #value is p+1
+            v=$(( $p + 1 ))
+            DESTFILE=${!v}     # note the ! = INDIRECT EXPANSION OF VARIABLES
+           ;;
+     "--resolution")
+            #value is p+1
+            v=$(( $p + 1 ))
+            SCANNER_RES=${!v}     # note the ! = INDIRECT EXPANSION OF VARIABLES
+            ;;
+     "--mode")
+            #value is p+1
+            v=$(( $p + 1 ))
+            SCANNER_MODE=${!v}     # note the ! = INDIRECT EXPANSION OF VARIABLES
+            ;;
+     "--quality")
+           #value is p+1
+            v=$(( $p + 1 ))
+            PDF_QUALITY=${!v}     # note the ! = INDIRECT EXPANSION OF VARIABLES
+            ;;
+     "--force")
+            #value is p+1
+            v=$(( $p + 1 ))
+            PDF_FORCE=${!v}     # note the ! = INDIRECT EXPANSION OF VARIABLES
+            ;;
+     "--pagesize")
+            # A4 [DEFAULT] = 210 x 297
+            # 6by4 = 152 x 101
+            # 4by6 = 101 x 152
+            #letter = 215.9 x 279.4
+           #value is p+1
+            v=$(( $p + 1 ))
+            case ${!v} in
+                "A4")
+                    PAGE_X=210
+                    PAGE_Y=297
+                    ;;
+                "6by4")
+                    PAGE_X=152
+                    PAGE_Y=101
+                    ;;
+                "4by6")
+                    PAGE_X=101
+                    PAGE_Y=152
+                    ;;
+                "letter")
+                    PAGE_X=216
+                    PAGE_Y=280
+                    ;;
+                *)
+                    echo "Unrecognised page size! Valid options are: A4, 6by4, 4by6 and letter"
+                    exit
+                    ;;
+            esac
+            ;;
+     "--help")
+           echo -e "This will scan one or more pages, convert it to a PDF and save it in the present
+directory. Possible switches are:
+    --help              - this message
+    --file ./somefile.pdf       - set a custom file name
+    --resolution 300        - set scanning resolution
+    --mode  greyscale       - set scanning mode 
+                    (lineart, binary, greyscale or color)
+    --quality 70            - set PDF jpeg compression factor 
+                    (1-100, higher number better quality)
+    --pagesize  A4      - set the page size, options are A4, 
+                    6by4, 4by6 or letter (A4 is the default)
+
+Lineart and Binary are equivalent, which term you use depends on your driver. 
+Note that some of these options may not work as it depends on your hardware and driver compatibility. See http://www.sane-project.org/sane-mfgs.html for more
+information.
+
+For devices that do not support '--mode lineart' or '--mode binary', if you 
+wish to make a black and white PDF (e.g. for archival or OCR purposes) then use 
+the following switch:
+
+    --force monochrome"
+            exit
+           ;;
+     esac  
+done
+#
+# Check that a scanner is attached
+#
+SCANNER_TEST=`scanimage -f %d`
+if [ ${#SCANNER_TEST} == 0 ]
+then
+    echo -e "No scanner detected! Is the device plugged in and powered on?
+Run 'scanimage -L' or 'sane-find-scanner' for further assistance"
+    exit 1
+fi
+#
+# check that we can write to destination file
+#
+if [ ! -w ${DESTFILE%/*} ]
+then
+    echo "Unable to write to ${DESTFILE%/*}"
+    exit 1
+fi
+#
+#
+# Test for required programs.
+if [[ -z $( type -p scanimage ) ]]; then echo -e "Error! scanimage (sane-utils) is not installed!";exit ;fi
+if [[ -z $( type -p tiffcp ) ]]; then echo -e "Error! tiffcp (libtiff-tools) is not installed!";exit ;fi
+if [[ -z $( type -p tiff2pdf ) ]]; then echo -e "Error! tiff2pdf (libtiff-tools) is not installed!";exit ;fi
+#
+# check for optional requirements - ImageMagick?
+#
+if [ $PDF_FORCE == "monochrome" ];
+then
+    if [[ -z $( type -p convert ) ]]; then echo -e "Error! convert (imagemagick) is not installed!";exit ;fi
+fi
+#
+#
+# create a temporary directory
+# TEMP_FLDR=`mktemp -d`
+TEMP_FLDR="/home/nuno/temp_scan"
+
+i=0
+CONTINUE="Y"
+while [ $CONTINUE == "Y" ] || [ $CONTINUE == "y" ]; do 
+	i=$(expr $i + 1)
+	echo "Scanning page $i"
+	# scanimage --mode $SCANNER_MODE --format tiff --resolution $SCANNER_RES -x $PAGE_X -y $PAGE_Y > $TEMP_FLDR/out$i.tif
+	if [ $HIGHTLIGHT -ne 0 ]; then
+     		echo "scanimage  --mode $SCANNER_MODE --highlight $HIGHTLIGHT --format tiff --resolution $SCANNER_RES -x $PAGE_X -y $PAGE_Y > $TEMP_FLDR/out$i.tif" 
+		scanimage \
+			--mode $SCANNER_MODE \
+			--highlight $HIGHTLIGHT \
+			--format tiff \
+			--resolution $SCANNER_RES \
+			-x $PAGE_X -y $PAGE_Y > $TEMP_FLDR/out$i.tif 
+    		#[scan an image, output to $TEMP_FLDR/out1.tif]
+		# could also use batch or batch-prompt to do multiple page scans and or use ADF
+	else	
+     		echo "scanimage  --mode $SCANNER_MODE  --format tiff --resolution $SCANNER_RES -x $PAGE_X -y $PAGE_Y > $TEMP_FLDR/out$i.tif" 
+    		scanimage \
+			--mode $SCANNER_MODE \
+			--format tiff \
+			--resolution $SCANNER_RES \
+			-x $PAGE_X -y $PAGE_Y > $TEMP_FLDR/out$i.tif 
+			#[scan an image, output to $TEMP_FLDR/out1.tif]
+			# could also use batch or batch-prompt to do multiple page scans and or use ADF
+	fi
+    read -p "Do you wish to scan another page (Y or N)?  " -n 1 -e CONTINUE
+done
+if [ $i -gt 0 ]
+then
+    #is force monochrome set?
+    if [ $PDF_FORCE == "monochrome" ] ;
+    then
+    	# but only proceed in case Lineart is not set?
+    	if [ $SCANNER_MODE <> "Linear" ] ;
+		then
+        		FILES=$TEMP_FLDR/out*.tif
+       			for f in $FILES
+        		do
+	 			# convert -auto-gamma  -brightness-contrast 20,20 $f $f 
+	 			# convert -auto-gamma   $f $f 
+            			convert "$f" -monochrome "$f"
+        		done
+    	fi
+    fi
+
+	
+
+#    for file in  `ls  $TEMP_FLDR/out*.tif ` 
+#    do 
+#	 # convert -auto-gamma  -brightness-contrast 20,20 $file $file 
+#	 convert -auto-gamma   $file $file 
+#    done
+    # join tiff files together
+    echo -e "Combining $i tiff files..." 
+    tiffcp -c lzw $TEMP_FLDR/out*.tif $TEMP_FLDR/final.tif 
+    #Convert the tiff to PDF
+    echo -e "Creating $DESTFILE"
+    # tiff2pdf -j -q $PDF_QUALITY $TEMP_FLDR/final.tif > "$DESTFILE"
+    tiff2pdf -z -q $PDF_QUALITY $TEMP_FLDR/final.tif > "$DESTFILE"
+    #delete temp folder
+else
+    #nothing to do
+    echo "No Pages scanned!"
+fi
+  rm  $TEMP_FLDR/*
+echo -e "Done."
